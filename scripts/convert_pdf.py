@@ -35,10 +35,10 @@ def get_total_pages(pdf_path: str) -> int:
     raise RuntimeError(f"pdfinfo로 페이지 수를 확인할 수 없습니다: {pdf_path}")
 
 
-def convert_pdf_to_slides(pdf_path: str) -> None:
+def convert_pdf_to_slides(pdf_path: str, source_name: str = "") -> None:
     """PDF를 슬라이드 이미지로 변환한다. 1장씩 처리하여 메모리를 절약한다."""
 
-    pdf_filename = os.path.basename(pdf_path)
+    pdf_filename = source_name or os.path.basename(pdf_path)
     total_pages = get_total_pages(pdf_path)
     print(f"[1/4] PDF 확인: {pdf_filename} ({total_pages}페이지)")
 
@@ -88,13 +88,15 @@ def convert_pdf_to_slides(pdf_path: str) -> None:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print(f"사용법: python {sys.argv[0]} <PDF 파일 경로>")
+    if len(sys.argv) < 2:
+        print(f"사용법: python {sys.argv[0]} <PDF 파일 경로> [원본 파일명]")
         sys.exit(1)
 
     pdf_path = sys.argv[1]
+    source_name = sys.argv[2] if len(sys.argv) >= 3 else ""
+
     if not os.path.exists(pdf_path):
         print(f"에러: 파일을 찾을 수 없습니다: {pdf_path}")
         sys.exit(1)
 
-    convert_pdf_to_slides(pdf_path)
+    convert_pdf_to_slides(pdf_path, source_name)
