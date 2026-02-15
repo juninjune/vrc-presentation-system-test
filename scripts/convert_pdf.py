@@ -2,11 +2,13 @@
 """
 PDF → 슬라이드 이미지 변환 스크립트.
 PDF 파일을 1920x1080 JPG 이미지로 변환하고 meta.json을 생성한다.
+1장씩 변환하여 메모리 사용량을 최소화한다 (GitHub Actions 대응).
 """
 
 import json
 import os
 import shutil
+import subprocess
 import sys
 from datetime import datetime, timezone
 
@@ -19,19 +21,26 @@ META_PATH = "Web/meta.json"
 TARGET_WIDTH = 1920
 TARGET_HEIGHT = 1080
 JPG_QUALITY = 85
-DPI = 200  # PDF 렌더링 해상도. 높을수록 선명하지만 느림
+DPI = 150  # 1920x1080 출력에는 150 DPI로 충분. 200→150 변경 (메모리 절약)
+
+
+def get_total_pages(pdf_path: str) -> int:
+    """pdfinfo로 총 페이지 수를 미리 확인한다."""
+    result = subprocess.run(
+        ["pdfinfo", pdf_path], capture_output=True, text=True
+    )
+    for line in result.stdout.splitlines():
+        if line.startswith("Pages:"):
+            return int(line.split(":")[1].strip())
+    raise RuntimeError(f"pdfinfo로 페이지 수를 확인할 수 없습니다: {pdf_path}")
 
 
 def convert_pdf_to_slides(pdf_path: str) -> None:
-    """PDF를 슬라이드 이미지로 변환한다."""
+    """PDF를 슬라이드 이미지로 변환한다. 1장씩 처리하여 메모리를 절약한다."""
 
     pdf_filename = os.path.basename(pdf_path)
-    print(f"[1/4] PDF 로드: {pdf_filename}")
-
-    # PDF → PIL Image 리스트
-    pages = convert_from_path(pdf_path, dpi=DPI)
-    total_pages = len(pages)
-    print(f"       {total_pages}페이지 감지됨")
+    total_pages = get_total_pages(pdf_path)
+    print(f"[1/4] PDF 확인: {pdf_filename} ({total_pages}페이지)")
 
     # 기존 slides 폴더 전체 삭제 후 재생성
     print(f"[2/4] {OUTPUT_DIR}/ 폴더 초기화")
@@ -39,13 +48,17 @@ def convert_pdf_to_slides(pdf_path: str) -> None:
         shutil.rmtree(OUTPUT_DIR)
     os.makedirs(OUTPUT_DIR)
 
-    # 각 페이지를 1920x1080 JPG로 저장
-    print(f"[3/4] 이미지 변환 중 ({TARGET_WIDTH}x{TARGET_HEIGHT}, JPG {JPG_QUALITY}%)")
-    for i, page in enumerate(pages):
-        page_num = i + 1
-        # 1920x1080으로 리사이즈 (비율 유지하지 않고 맞춤)
+    # 1장씩 변환 (메모리 절약: 한번에 1페이지만 메모리에 로드)
+    print(f"[3/4] 이미지 변환 중 ({TARGET_WIDTH}x{TARGET_HEIGHT}, JPG {JPG_QUALITY}%, DPI {DPI})")
+    for page_num in range(1, total_pages + 1):
+        # first_page/last_page로 1장씩만 렌더링
+        pages = convert_from_path(
+            pdf_path, dpi=DPI, first_page=page_num, last_page=page_num
+        )
+        page = pages[0]
+
+        # 1920x1080으로 리사이즈
         resized = page.resize((TARGET_WIDTH, TARGET_HEIGHT), Image.LANCZOS)
-        # RGB 변환 (RGBA인 경우 대비)
         if resized.mode != "RGB":
             resized = resized.convert("RGB")
 
@@ -53,8 +66,11 @@ def convert_pdf_to_slides(pdf_path: str) -> None:
         filepath = os.path.join(OUTPUT_DIR, filename)
         resized.save(filepath, "JPEG", quality=JPG_QUALITY)
 
+        # 메모리 즉시 해제
+        del pages, page, resized
+
         file_size_kb = os.path.getsize(filepath) / 1024
-        print(f"       {filename} ({file_size_kb:.0f} KB)")
+        print(f"       [{page_num}/{total_pages}] {filename} ({file_size_kb:.0f} KB)")
 
     # meta.json 생성
     print(f"[4/4] meta.json 생성")
