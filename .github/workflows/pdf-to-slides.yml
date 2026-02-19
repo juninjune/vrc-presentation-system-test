@@ -19,6 +19,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       changed: ${{ steps.dropbox.outputs.changed }}
+      pdf_name: ${{ steps.dropbox.outputs.pdf_name }}
+      total_pages: ${{ steps.meta.outputs.total_pages }}
 
     steps:
       # --- 저장소 체크아웃 ---
@@ -122,6 +124,14 @@ jobs:
         if: steps.dropbox.outputs.changed == 'true'
         run: python scripts/convert_pdf.py input.pdf "${{ steps.dropbox.outputs.pdf_name }}"
 
+      # --- meta.json에서 총 페이지 수 추출 ---
+      - name: Read total pages from meta.json
+        id: meta
+        if: steps.dropbox.outputs.changed == 'true'
+        run: |
+          TOTAL=$(python3 -c "import json; print(json.load(open('Web/meta.json'))['total_pages'])")
+          echo "total_pages=$TOTAL" >> $GITHUB_OUTPUT
+
       # --- 해시 파일 저장 (다음 실행 시 비교용) ---
       - name: Save PDF hash
         if: steps.dropbox.outputs.changed == 'true'
@@ -164,3 +174,57 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+      # --- Discord 배포 알림 (성공/실패 무관하게 항상 전송) ---
+      - name: Notify Discord
+        if: always()
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+          PDF_NAME: ${{ needs.convert.outputs.pdf_name }}
+          TOTAL_PAGES: ${{ needs.convert.outputs.total_pages }}
+          DEPLOY_STATUS: ${{ job.status }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python3 - <<'PYEOF'
+          import json, os, sys, urllib.request, urllib.error
+          
+          status      = os.environ.get('DEPLOY_STATUS', 'unknown')
+          pdf_name    = os.environ.get('PDF_NAME', '(알 수 없음)')
+          total_pages = os.environ.get('TOTAL_PAGES', '?')
+          page_url    = os.environ.get('PAGE_URL', '')
+          run_url     = os.environ.get('RUN_URL', '')
+          webhook     = os.environ.get('DISCORD_WEBHOOK_URL', '')
+          repo        = os.environ.get('GITHUB_REPOSITORY', '')
+          
+          icon  = '✅' if status == 'success' else '❌'
+          color = 0x57F287 if status == 'success' else 0xED4245  # green / red
+          
+          fields = [
+              {'name': '📄 페이지 수',  'value': f'{total_pages}장', 'inline': True},
+              {'name': '📊 배포 상태', 'value': status,              'inline': True},
+          ]
+          if run_url:
+              fields.append({'name': '🔗 실행 로그', 'value': f'[Actions 열기]({run_url})', 'inline': False})
+          
+          embed = {
+              'title':       f'{icon} SoopUniv 슬라이드 배포',
+              'description': f'**{pdf_name}** 변환 완료',
+              'color':       color,
+              'fields':      fields,
+              'footer':      {'text': repo},
+          }
+          if page_url:
+              embed['url']   = page_url
+              embed['image'] = {'url': page_url.rstrip('/') + '/slides/slide_001.jpg'}
+          
+          payload = json.dumps({'embeds': [embed]}).encode()
+          req = urllib.request.Request(webhook, data=payload,
+                                       headers={'Content-Type': 'application/json'})
+          try:
+              with urllib.request.urlopen(req) as r:
+                  print(f'Discord 알림 전송 완료 ({r.status})')
+          except urllib.error.HTTPError as e:
+              print(f'Discord 전송 실패: {e.code} — {e.read().decode()}', file=sys.stderr)
+              sys.exit(1)
+          PYEOF
