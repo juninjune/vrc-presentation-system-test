@@ -2,7 +2,7 @@ name: PDF to Slides Converter
 
 on:
   schedule:
-    - cron: '0 * * * *'  # 매 정시마다 (1시간 폴링)
+    - cron: '7 * * * *'  # 매시 7분마다 (1시간 폴링)
   workflow_dispatch:       # GitHub 웹 UI에서 수동 실행
 
 permissions:
