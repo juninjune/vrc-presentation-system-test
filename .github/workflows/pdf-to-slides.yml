@@ -220,7 +220,10 @@ jobs:
           
           payload = json.dumps({'embeds': [embed]}).encode()
           req = urllib.request.Request(webhook, data=payload,
-                                       headers={'Content-Type': 'application/json'})
+                                       headers={
+                                           'Content-Type': 'application/json',
+                                           'User-Agent': 'DiscordBot (https://discord.com, 1)',
+                                       })
           try:
               with urllib.request.urlopen(req) as r:
                   print(f'Discord 알림 전송 완료 ({r.status})')
