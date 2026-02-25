@@ -27,11 +27,20 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # --- Dropbox Access Token 갱신 (Refresh Token으로 매 실행 시 발급) ---
+      - name: Get Dropbox Access Token
+        run: |
+          RESPONSE=$(curl -s -X POST https://api.dropboxapi.com/oauth2/token \
+            -d grant_type=refresh_token \
+            -d refresh_token=${{ secrets.DROPBOX_REFRESH_TOKEN }} \
+            -d client_id=${{ secrets.DROPBOX_APP_KEY }} \
+            -d client_secret=${{ secrets.DROPBOX_APP_SECRET }})
+          ACCESS_TOKEN=$(echo "$RESPONSE" | python3 -c "import json,sys; print(json.load(sys.stdin)['access_token'])")
+          echo "DROPBOX_ACCESS_TOKEN=$ACCESS_TOKEN" >> $GITHUB_ENV
+
       # --- Dropbox에서 PDF 확인 및 다운로드 ---
       - name: Check Dropbox for PDF
         id: dropbox
-        env:
-          DROPBOX_ACCESS_TOKEN: ${{ secrets.DROPBOX_ACCESS_TOKEN }}
         run: |
           echo "=== Dropbox 폴더 확인 ==="
 
@@ -40,10 +49,7 @@ jobs:
             https://api.dropboxapi.com/2/files/list_folder \
             -H "Authorization: Bearer $DROPBOX_ACCESS_TOKEN" \
             -H "Content-Type: application/json" \
-            -d '{"path": "/Share/2026/VirtualUniversity", "recursive": false}')
-
-          echo "=== Dropbox 폴더 확인 ==="
-          echo "$RESPONSE"
+            -d '{"path": "/Share/2026/버추얼 대학교 PDF 업로드 폴더", "recursive": false}')
 
           # PDF 파일 필터링 (1개만 허용)
           PDF_RESULT=$(echo "$RESPONSE" | python3 -c "
@@ -189,48 +195,47 @@ jobs:
           DEPLOY_STATUS: ${{ job.status }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          python3 - <<'PYEOF'
-          import json, os, sys, urllib.request, urllib.error
-          
-          status      = os.environ.get('DEPLOY_STATUS', 'unknown')
-          pdf_name    = os.environ.get('PDF_NAME', '(알 수 없음)')
-          total_pages = os.environ.get('TOTAL_PAGES', '?')
-          page_url    = os.environ.get('PAGE_URL', '')
-          run_url     = os.environ.get('RUN_URL', '')
-          webhook     = os.environ.get('DISCORD_WEBHOOK_URL', '')
-          repo        = os.environ.get('GITHUB_REPOSITORY', '')
-          
-          icon  = '✅' if status == 'success' else '❌'
-          color = 0x57F287 if status == 'success' else 0xED4245  # green / red
-          
-          fields = [
-              {'name': '📄 페이지 수',  'value': f'{total_pages}장', 'inline': True},
-              {'name': '📊 배포 상태', 'value': status,              'inline': True},
-          ]
-          if run_url:
-              fields.append({'name': '🔗 실행 로그', 'value': f'[Actions 열기]({run_url})', 'inline': False})
-          
-          embed = {
-              'title':       f'{icon} 버추얼 대학교 슬라이드 PDF 업데이트',
-              'description': f'**{pdf_name}** 업로드 완료',
-              'color':       color,
-              'fields':      fields,
-              'footer':      {'text': repo},
-          }
-          if page_url:
-              embed['url']   = page_url
-              embed['image'] = {'url': page_url.rstrip('/') + '/slides/slide_001.jpg'}
-          
-          payload = json.dumps({'embeds': [embed]}).encode()
-          req = urllib.request.Request(webhook, data=payload,
+                python3 - <<'PYEOF'
+                import json, os, sys, urllib.request, urllib.error          
+                status      = os.environ.get('DEPLOY_STATUS', 'unknown')
+                pdf_name    = os.environ.get('PDF_NAME', '(알 수 없음)')
+                total_pages = os.environ.get('TOTAL_PAGES', '?')
+                page_url    = os.environ.get('PAGE_URL', '')
+                run_url     = os.environ.get('RUN_URL', '')
+                webhook     = os.environ.get('DISCORD_WEBHOOK_URL', '')
+                repo        = os.environ.get('GITHUB_REPOSITORY', '')
+                
+                icon  = '✅' if status == 'success' else '❌'
+                color = 0x57F287 if status == 'success' else 0xED4245  # green / red
+                
+                fields = [
+                    {'name': '📄 페이지 수',  'value': f'{total_pages}장', 'inline': True},
+                    {'name': '📊 배포 상태', 'value': status,              'inline': True},
+                ]
+                if run_url:
+                    fields.append({'name': '🔗 실행 로그', 'value': f'[Actions 열기]({run_url})', 'inline': False})
+                
+                embed = {
+                    'title':       f'{icon} SoopUniv 슬라이드 배포',
+                    'description': f'**{pdf_name}** 변환 완료',
+                    'color':       color,
+                    'fields':      fields,
+                    'footer':      {'text': repo},
+                }
+                if page_url:
+                    embed['url']   = page_url
+                    embed['image'] = {'url': page_url.rstrip('/') + '/slides/slide_001.jpg'}
+                
+                payload = json.dumps({'embeds': [embed]}).encode()
+                req = urllib.request.Request(webhook, data=payload,
                                        headers={
                                            'Content-Type': 'application/json',
                                            'User-Agent': 'DiscordBot (https://discord.com, 1)',
-                                       })
-          try:
-              with urllib.request.urlopen(req) as r:
-                  print(f'Discord 알림 전송 완료 ({r.status})')
-          except urllib.error.HTTPError as e:
-              print(f'Discord 전송 실패: {e.code} — {e.read().decode()}', file=sys.stderr)
-              sys.exit(1)
-          PYEOF
+                                             })
+                try:
+                    with urllib.request.urlopen(req) as r:
+                        print(f'Discord 알림 전송 완료 ({r.status})')
+                except urllib.error.HTTPError as e:
+                    print(f'Discord 전송 실패: {e.code} — {e.read().decode()}', file=sys.stderr)
+                    sys.exit(1)
+                PYEOF
