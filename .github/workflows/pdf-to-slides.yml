@@ -2,7 +2,7 @@ name: PDF to Slides Converter
 
 on:
   schedule:
-    - cron: '7 * * * *'  # 매시 7분마다 (1시간 폴링)
+    - cron: '0 * * * *'  # 매 정시마다 (1시간 폴링)
   workflow_dispatch:       # GitHub 웹 UI에서 수동 실행
 
 permissions:
@@ -44,7 +44,7 @@ jobs:
         run: |
           echo "=== Dropbox 폴더 확인 ==="
 
-          # App folder 루트의 파일 목록 조회
+          # 파일 목록 조회
           RESPONSE=$(curl -s -X POST \
             https://api.dropboxapi.com/2/files/list_folder \
             -H "Authorization: Bearer $DROPBOX_ACCESS_TOKEN" \
@@ -195,47 +195,48 @@ jobs:
           DEPLOY_STATUS: ${{ job.status }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-                python3 - <<'PYEOF'
-                import json, os, sys, urllib.request, urllib.error          
-                status      = os.environ.get('DEPLOY_STATUS', 'unknown')
-                pdf_name    = os.environ.get('PDF_NAME', '(알 수 없음)')
-                total_pages = os.environ.get('TOTAL_PAGES', '?')
-                page_url    = os.environ.get('PAGE_URL', '')
-                run_url     = os.environ.get('RUN_URL', '')
-                webhook     = os.environ.get('DISCORD_WEBHOOK_URL', '')
-                repo        = os.environ.get('GITHUB_REPOSITORY', '')
-                
-                icon  = '✅' if status == 'success' else '❌'
-                color = 0x57F287 if status == 'success' else 0xED4245  # green / red
-                
-                fields = [
-                    {'name': '📄 페이지 수',  'value': f'{total_pages}장', 'inline': True},
-                    {'name': '📊 배포 상태', 'value': status,              'inline': True},
-                ]
-                if run_url:
-                    fields.append({'name': '🔗 실행 로그', 'value': f'[Actions 열기]({run_url})', 'inline': False})
-                
-                embed = {
-                    'title':       f'{icon} SoopUniv 슬라이드 배포',
-                    'description': f'**{pdf_name}** 변환 완료',
-                    'color':       color,
-                    'fields':      fields,
-                    'footer':      {'text': repo},
-                }
-                if page_url:
-                    embed['url']   = page_url
-                    embed['image'] = {'url': page_url.rstrip('/') + '/slides/slide_001.jpg'}
-                
-                payload = json.dumps({'embeds': [embed]}).encode()
-                req = urllib.request.Request(webhook, data=payload,
+          python3 - <<'PYEOF'
+          import json, os, sys, urllib.request, urllib.error
+          
+          status      = os.environ.get('DEPLOY_STATUS', 'unknown')
+          pdf_name    = os.environ.get('PDF_NAME', '(알 수 없음)')
+          total_pages = os.environ.get('TOTAL_PAGES', '?')
+          page_url    = os.environ.get('PAGE_URL', '')
+          run_url     = os.environ.get('RUN_URL', '')
+          webhook     = os.environ.get('DISCORD_WEBHOOK_URL', '')
+          repo        = os.environ.get('GITHUB_REPOSITORY', '')
+          
+          icon  = '✅' if status == 'success' else '❌'
+          color = 0x57F287 if status == 'success' else 0xED4245  # green / red
+          
+          fields = [
+              {'name': '📄 페이지 수',  'value': f'{total_pages}장', 'inline': True},
+              {'name': '📊 배포 상태', 'value': status,              'inline': True},
+          ]
+          if run_url:
+              fields.append({'name': '🔗 실행 로그', 'value': f'[Actions 열기]({run_url})', 'inline': False})
+          
+          embed = {
+              'title':       f'{icon} SoopUniv 슬라이드 배포',
+              'description': f'**{pdf_name}** 변환 완료',
+              'color':       color,
+              'fields':      fields,
+              'footer':      {'text': repo},
+          }
+          if page_url:
+              embed['url']   = page_url
+              embed['image'] = {'url': page_url.rstrip('/') + '/slides/slide_001.jpg'}
+          
+          payload = json.dumps({'embeds': [embed]}).encode()
+          req = urllib.request.Request(webhook, data=payload,
                                        headers={
                                            'Content-Type': 'application/json',
                                            'User-Agent': 'DiscordBot (https://discord.com, 1)',
-                                             })
-                try:
-                    with urllib.request.urlopen(req) as r:
-                        print(f'Discord 알림 전송 완료 ({r.status})')
-                except urllib.error.HTTPError as e:
-                    print(f'Discord 전송 실패: {e.code} — {e.read().decode()}', file=sys.stderr)
-                    sys.exit(1)
-                PYEOF
+                                       })
+          try:
+              with urllib.request.urlopen(req) as r:
+                  print(f'Discord 알림 전송 완료 ({r.status})')
+          except urllib.error.HTTPError as e:
+              print(f'Discord 전송 실패: {e.code} — {e.read().decode()}', file=sys.stderr)
+              sys.exit(1)
+          PYEOF
