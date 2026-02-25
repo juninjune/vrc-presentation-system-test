@@ -49,7 +49,7 @@ jobs:
             https://api.dropboxapi.com/2/files/list_folder \
             -H "Authorization: Bearer $DROPBOX_ACCESS_TOKEN" \
             -H "Content-Type: application/json" \
-            -d '{"path": "/Share/2026/버추얼 대학교 PDF 업로드 폴더", "recursive": false}')
+            -d '{"path": "/Share/2026/VirtualUniversity", "recursive": false}')
 
           # PDF 파일 필터링 (1개만 허용)
           PDF_RESULT=$(echo "$RESPONSE" | python3 -c "
